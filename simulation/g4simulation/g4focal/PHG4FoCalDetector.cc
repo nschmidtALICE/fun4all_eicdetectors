@@ -84,6 +84,7 @@ PHG4FoCalDetector::PHG4FoCalDetector(PHG4Subsystem* subsys, PHCompositeNode* Nod
   , _towerlogicnameprefix("hfocalTower")
   , _superdetector("NONE")
   , _mapping_tower_file("")
+  , m_doLightProp(true)
 {
 }
 //_______________________________________________________________________
@@ -125,7 +126,7 @@ int PHG4FoCalDetector::IsInFoCal(G4VPhysicalVolume* volume) const
 //_______________________________________________________________________
 void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
 {
-  Verbosity(2);
+  // Verbosity(2);
   if (Verbosity() > 0)
   {
     cout << "PHG4FoCalDetector: Begin Construction" << endl;
@@ -336,6 +337,8 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
         }
       }
     }
+  } else if(_tower_type==69){
+    ConstructCopperTiltedFibers(0,logicWorld);
   } else {
     ConstructCapillaryRowDetector(0,focalH_envelope_log);
     // place all 40 rows with 36 capillary tubes each
@@ -347,6 +350,15 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
   return;
 }
 
+//_______________________________________________________________________
+bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* envelope)
+{
+  // G4VSolid* focalH_envelope_solid = new G4Box("hfocalH_envelope_solid_precut",
+  //                                     _rMax1,
+  //                                     _rMax1,
+  //                                     (_tower_dz) / 2.0);
+  return true;
+}
 //_______________________________________________________________________
 bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* envelope)
 {
@@ -381,6 +393,12 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                                             _tower_dz / 2.0,
                                             0.,2*M_PI*rad);
 
+  // G4VSolid* solid_airgap  = new G4Tubs(G4String("single_airgap"),
+  //                                           diameter_fiber / 2.0,
+  //                                           copperTubeInnerDiam / 2.0,
+  //                                           _tower_dz / 2.0,
+  //                                           0.,2*M_PI*rad);
+
 
   G4Material* material_scintillator = GetScintillatorMaterial();
 
@@ -400,6 +418,11 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                                                         "logic_filledcap",
                                                         0, 0, 0);
 
+  // G4LogicalVolume* logic_airgap = new G4LogicalVolume(solid_airgap,
+  //                                                       G4Material::GetMaterial("G4_AIR"),
+  //                                                       "logic_airgap",
+  //                                                       0, 0, 0);
+
   G4LogicalVolume* logic_absorber = new G4LogicalVolume(solid_absorber,
                                                         material_absorber,
                                                         "absorber_solid_logic",
@@ -409,10 +432,14 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                                                     material_scintillator,
                                                     "hfocal_single_scintillator_fiber_logic",
                                                     0, 0, 0);
-
+  if(m_doLightProp){
+    SurfaceTable(logic_scint);
+    // SurfaceTable(logic_absorber);
+  }
   m_DisplayAction->AddVolume(logic_filledcap, "FfocalEnvelope");
   m_DisplayAction->AddVolume(logic_absorber, "Absorber");
   m_DisplayAction->AddVolume(logic_scint, "Scintillator");
+  // m_DisplayAction->AddVolume(logic_airgap, "Invisible");
 
 
   new G4PVPlacement(0, G4ThreeVector(0, 0, 0),
@@ -420,12 +447,21 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                   _towerlogicnameprefix + "absorbersolid_copper",
                   logic_filledcap,
                   0, 0, OverlapCheck());
+  //G4VPhysicalVolume* placed_logic_scint = 
   new G4PVPlacement(0, G4ThreeVector(0, 0, 0),
                   logic_scint,
                   _towerlogicnameprefix + "singlescintillatorfiber_scint",
                   logic_filledcap,
                   0, 0, OverlapCheck());
-
+  //G4VPhysicalVolume* placed_logic_airgap = 
+  // new G4PVPlacement(0, G4ThreeVector(0, 0, 0),
+  //                 logic_airgap,
+  //                 _towerlogicnameprefix + "single_airgap",
+  //                 logic_filledcap,
+  //                 0, 0, OverlapCheck());
+  // if(m_doLightProp){
+  //   MakeBoundary(placed_logic_scint,placed_logic_airgap);
+  // }
   //place physical volumes for absorber and scintillator fiber
 
   /* Loop over all tower positions in vector and place tower */
@@ -902,7 +938,8 @@ PHG4FoCalDetector::GetScintillatorMaterial()
   const G4int ntab = 31;
   tab->AddConstProperty("FASTTIMECONSTANT", 2.8*ns); // was 6
   // tab->AddConstProperty("SCINTILLATIONYIELD", 13.9/keV); // was 200/MEV nominal  10
-  tab->AddConstProperty("SCINTILLATIONYIELD", 200/MeV); // was 200/MEV nominal, should maybe be 13.9/keV
+  tab->AddConstProperty("SCINTILLATIONYIELD", 1.39/keV); // was 200/MEV nominal  10
+  // tab->AddConstProperty("SCINTILLATIONYIELD", 200/MeV); // was 200/MEV nominal, should maybe be 13.9/keV
   tab->AddConstProperty("RESOLUTIONSCALE", 1.0);
 
   G4double opt_en[] =
@@ -1099,6 +1136,70 @@ PHG4FoCalDetector::GetQuartzMaterial()
   return material_Quartz;
 }
 
+//_____________________________________________________________________________
+void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol) {
+
+  G4OpticalSurface *surface = new G4OpticalSurface("ScintWrapB1");
+
+  new G4LogicalSkinSurface("CrystalSurfaceL", vol, surface);
+
+  // surface->SetType(dielectric_dielectric);
+  surface->SetType(dielectric_metal);
+  // surface->SetType(dielectric_LUT);
+  surface->SetFinish(polished);
+  // surface->SetModel(LUT);
+  surface->SetModel(glisur);
+
+  //crystal optical surface
+
+  //surface material
+  const G4int ntab = 2;
+  G4double opt_en[] = {1.551*eV, 3.545*eV}; // 350 - 800 nm
+  G4double reflectivity[] = {0.99, 0.99};
+  // G4double efficiency[] = {0.07, 0.07};
+  G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
+  surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
+  // surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
+  surface->SetMaterialPropertiesTable(surfmat);
+  //csurf->DumpInfo();
+
+}//SurfaceTable
+
+
+//_____________________________________________________________________________
+void PHG4FoCalDetector::MakeBoundary(G4VPhysicalVolume *fromVol, G4VPhysicalVolume *toVol) {
+
+  //optical boundary between the fromVol and optical photons detector
+
+  G4OpticalSurface *surf = new G4OpticalSurface("OpDetS");
+  surf->SetType(dielectric_dielectric); // photons go to the detector, must have rindex defined
+  // surf->SetType(dielectric_metal); // photon is absorbed when reaching the detector, no material rindex required
+  //surf->SetFinish(ground);
+  surf->SetFinish(polished);
+  //surf->SetModel(unified);
+  surf->SetModel(glisur);
+
+  new G4LogicalBorderSurface("OpDetB", fromVol, toVol, surf);
+
+  const G4int ntab = 2;
+  G4double opt_en[] = {1.551*eV, 3.545*eV}; // 350 - 800 nm
+  //G4double reflectivity[] = {0., 0.};
+  G4double reflectivity[] = {0.99, 0.99};
+  //G4double reflectivity[] = {1., 1.};
+  G4double efficiency[] = {1., 1.};
+  G4double RefractiveIndexBoundary[] = { 1.0, 1.0};
+
+  G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
+  surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
+  surfmat->AddProperty("RINDEX", opt_en, RefractiveIndexBoundary, ntab);
+  surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
+  surf->SetMaterialPropertiesTable(surfmat);
+
+
+
+}//MakeBoundary
+
+
 
 int PHG4FoCalDetector::ParseParametersFromTable()
 {
@@ -1148,7 +1249,7 @@ int PHG4FoCalDetector::ParseParametersFromTable()
       std::ostringstream towername;
       towername.str("");
       towername << _towerlogicnameprefix << "_j_" << idx_j << "_k_" << idx_k;
-      cout << _towerlogicnameprefix << "_j_" << idx_j << "_k_" << idx_k << endl;
+      // cout << _towerlogicnameprefix << "_j_" << idx_j << "_k_" << idx_k << endl;
       /* Add Geant4 units */
       pos_x = pos_x * cm;
       pos_y = pos_y * cm;

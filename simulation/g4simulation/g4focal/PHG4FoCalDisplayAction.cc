@@ -103,6 +103,10 @@ void PHG4FoCalDisplayAction::ApplyDisplayAction(G4VPhysicalVolume *physvol)
       visatt->SetColour(G4Colour::Cyan());
       visatt->SetVisibility(false);
     }
+    else if (it.second == "Invisible")
+    {
+      visatt->SetVisibility(false);
+    }
     else
     {
       cout << "unknown logical volume " << it.second << endl;

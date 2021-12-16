@@ -90,6 +90,7 @@ class PHG4FoCalDetector : public PHG4Detector
   G4LogicalVolume *ConstructTower(int type);
   G4LogicalVolume *ConstructTowerLayered(int type);
   bool ConstructCapillaryRowDetector(int type,G4LogicalVolume* envelope);
+  bool ConstructCopperTiltedFibers(int type,G4LogicalVolume* envelope);
   // G4LogicalVolume *ConstructTowerFCStyle(int type);
   // G4LogicalVolume *ConstructTowerType1();
   // G4LogicalVolume *ConstructTowerType2();
@@ -97,6 +98,8 @@ class PHG4FoCalDetector : public PHG4Detector
   G4Material *GetScintillatorMaterial();
   G4Material *GetQuartzMaterial();
   G4Material *GetPMMAMaterial();
+  void SurfaceTable(G4LogicalVolume *vol);
+  void MakeBoundary(G4VPhysicalVolume *crystal, G4VPhysicalVolume *opdet);
   int PlaceTower(G4LogicalVolume *envelope, G4LogicalVolume *tower);
   int ParseParametersFromTable();
 
@@ -165,6 +168,7 @@ class PHG4FoCalDetector : public PHG4Detector
   std::string _towerlogicnameprefix;
   std::string _superdetector;
   std::string _mapping_tower_file;
+  bool m_doLightProp;
   std::map<std::string, G4double> m_GlobalParameterMap;
   std::map<std::string, towerposition> m_TowerPostionMap;
 
