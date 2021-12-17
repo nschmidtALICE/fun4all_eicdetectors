@@ -98,8 +98,8 @@ class PHG4FoCalDetector : public PHG4Detector
   G4Material *GetScintillatorMaterial();
   G4Material *GetQuartzMaterial();
   G4Material *GetPMMAMaterial();
-  void SurfaceTable(G4LogicalVolume *vol);
-  void MakeBoundary(G4VPhysicalVolume *crystal, G4VPhysicalVolume *opdet);
+  void SurfaceTable(G4LogicalVolume *vol,  G4String  name);
+  void MakeBoundaryFibers(G4VPhysicalVolume *crystal, G4VPhysicalVolume *opdet,  G4String  name);
   int PlaceTower(G4LogicalVolume *envelope, G4LogicalVolume *tower);
   int ParseParametersFromTable();
 

@@ -18,12 +18,15 @@
 #include <Geant4/G4ThreeVector.hh>      // for G4ThreeVector
 #include <Geant4/G4Transform3D.hh>      // for G4Transform3D
 #include <Geant4/G4Types.hh>               // for G4double, G4int
+#include <Geant4/G4Torus.hh>               // for G4double, G4int
+#include <Geant4/G4Para.hh>               // for G4double, G4int
 #include <Geant4/G4VPhysicalVolume.hh>  // for G4VPhysicalVolume
 #include <Geant4/G4PVParameterised.hh>
 #include <Geant4/G4PVReplica.hh>
 #include <Geant4/G4NistManager.hh>
 #include <Geant4/G4OpticalSurface.hh>
 #include <Geant4/G4LogicalSkinSurface.hh>
+#include <Geant4/G4GeometryTolerance.hh>
 #include <Geant4/G4LogicalBorderSurface.hh>
 
 #include <TSystem.h>
@@ -60,7 +63,7 @@ PHG4FoCalDetector::PHG4FoCalDetector(PHG4Subsystem* subsys, PHCompositeNode* Nod
   , _rMax2(3369 * mm)
   , _dZ(1000 * mm)
   , _sPhi(0)
-  , _dPhi(2 * M_PI)
+  , _dPhi(2 * M_PIl)
   , _tower_type(0)
   , _tower_readout(0.5 * mm)
   , _tower_dx(100 * mm)
@@ -203,7 +206,7 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
                                         _rMin1, _rMax1,
                                         _rMin1, _rMax1,
                                         thickness_W / 2.0,
-                                        0, 2 * M_PI);
+                                        0, 2 * M_PIl);
       G4LogicalVolume* focal_E_plate_log = new G4LogicalVolume(focal_E_plate_solid, G4Material::GetMaterial("G4_W"), G4String("focal_E_plate_log"), 0, 0, 0);
       for(int iplate=0;iplate<nPlates_W;iplate++){
         new G4PVPlacement(0, G4ThreeVector(0, 0, -(focal_E_dz)/2+thickness_W/2+iplate*thickness_W+iplate*spacing_W),
@@ -215,7 +218,7 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
                                         _rMin1, _rMax1,
                                         _rMin1, _rMax1,
                                         BackplaneThickness / 2.0,
-                                        0, 2 * M_PI);
+                                        0, 2 * M_PIl);
       G4LogicalVolume* focal_E_backplane_log = new G4LogicalVolume(focal_E_backplane_solid, G4Material::GetMaterial("G4_Al"), G4String("focal_E_backplane_log"), 0, 0, 0); 
       new G4PVPlacement(0, G4ThreeVector(0, 0, -(focal_E_dz)/2+thickness_W/2+20*thickness_W+20*spacing_W+AirPad+BackplaneThickness/2),
                             focal_E_backplane_log,"focal_E_backplane_physical", focalE_envelope_log, 0, false, OverlapCheck());
@@ -338,7 +341,7 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
       }
     }
   } else if(_tower_type==69){
-    ConstructCopperTiltedFibers(0,logicWorld);
+    ConstructCopperTiltedFibers(0,focalH_envelope_log);
   } else {
     ConstructCapillaryRowDetector(0,focalH_envelope_log);
     // place all 40 rows with 36 capillary tubes each
@@ -351,12 +354,310 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
 }
 
 //_______________________________________________________________________
-bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* envelope)
+bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* logic_envelope)
 {
-  // G4VSolid* focalH_envelope_solid = new G4Box("hfocalH_envelope_solid_precut",
-  //                                     _rMax1,
-  //                                     _rMax1,
-  //                                     (_tower_dz) / 2.0);
+  G4double TowerDx = _rMax1*2;
+  G4double TowerDz = _tower_dz;
+  G4double fiber_spacing = 2*mm;
+  G4double edge_distance = 5*mm;
+
+  G4double fiber_thickness = 1.0*mm;
+  G4double min_fiber_bending_radius = 1.25*cm;
+  // provide an angle for the fiber loop tilt -> must be greater than Moliere spread
+  G4double tilting_angle = 0.25 * M_PIl;
+  // total height of the tilted loop for the given angle within the tower dimensions
+  G4double loop_total_height = TowerDx / sin(tilting_angle);
+  loop_total_height -= 2*sqrt(pow((fiber_thickness + fiber_spacing)/2.0,2)-pow(((fiber_thickness + fiber_spacing) * sin(tilting_angle))/2.0,2));
+  // number of loops possible with the minimum bending radius
+  int nLoopsFiber = (int) (loop_total_height/(2 * min_fiber_bending_radius));
+  // odd number of loops required to have SiPMs on same side of tower
+  if(nLoopsFiber%2 == 0) nLoopsFiber-=1;
+
+
+  G4VSolid* solid_full_loop_para_mother = new G4Para("solid_full_loop_para_mother",
+                                                (fiber_thickness + fiber_spacing) / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+                                                tilting_angle, 0, 0);
+  G4double paraBoxWidth = (fiber_thickness + fiber_spacing) * sin(tilting_angle);
+
+  G4VSolid* solid_full_loop_para = new G4Box("solid_full_loop_para",
+                                                TowerDx / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
+  G4LogicalVolume* logic_full_loop_para = new G4LogicalVolume(solid_full_loop_para,
+                                                              G4Material::GetMaterial("G4_AIR"), "logic_full_loop_para",
+                                                              0, 0, 0);
+  m_DisplayAction->AddVolume(logic_full_loop_para, "Invisible");
+
+  G4VSolid* solid_full_absorber_para_left = new G4Box("solid_full_absorber_para_left",
+                                                (min_fiber_bending_radius + edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
+  G4VSolid* solid_full_absorber_para_center = new G4Box("solid_full_absorber_para_center",
+                                                (TowerDx - 2.0 * min_fiber_bending_radius - 2.0 * edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
+  G4VSolid* solid_full_absorber_para_right = new G4Box("solid_full_absorber_para_right",
+                                                (min_fiber_bending_radius + edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
+
+  G4LogicalVolume* logic_full_loop_para_mother = new G4LogicalVolume(solid_full_loop_para_mother,
+                                                              G4Material::GetMaterial("G4_AIR"), "logic_full_loop_para_mother",
+                                                              0, 0, 0);
+  m_DisplayAction->AddVolume(logic_full_loop_para_mother, "ParaEnvelope");
+
+
+  G4VSolid* solid_left_half_loop = new G4Torus("solid_left_half_loop",
+                                                0, fiber_thickness / 2.0,
+                                                min_fiber_bending_radius,
+                                                0.5 * M_PIl, 1.0 * M_PIl);
+  // G4VSolid* solid_right_half_loop = new G4Torus("solid_right_half_loop",
+  //                                               0, fiber_thickness / 2.0,
+  //                                               min_fiber_bending_radius,
+  //                                               -0.5 * M_PIl, 1.0 * M_PIl);
+  G4VSolid* solid_long_fiber_straight = new G4Tubs("solid_long_fiber_straight",
+                                                    0,
+                                                    fiber_thickness / 2.0,
+                                                    (TowerDx - 2.0 * min_fiber_bending_radius - 2.0*edge_distance) / 2.0,
+                                                    0, 2.0 * M_PIl);
+  G4VSolid* solid_xlong_fiber_straight = new G4Tubs("solid_xlong_fiber_straight",
+                                                    0,
+                                                    fiber_thickness / 2.0,
+                                                    (TowerDx - min_fiber_bending_radius - edge_distance) / 2.0,
+                                                    0, 2.0 * M_PIl);
+
+  G4LogicalVolume* logic_left_half_loop = new G4LogicalVolume(solid_left_half_loop,
+                                                              GetScintillatorMaterial(), "logic_left_half_loop",
+                                                              0, 0, 0);
+  // G4LogicalVolume* logic_right_half_loop = new G4LogicalVolume(solid_right_half_loop,
+  //                                                             GetScintillatorMaterial(), "logic_right_half_loop",
+  //                                                             0, 0, 0);
+  G4LogicalVolume* logic_long_fiber_straight = new G4LogicalVolume(solid_long_fiber_straight,
+                                                              GetScintillatorMaterial(), "logic_long_fiber_straight",
+                                                              0, 0, 0);
+  G4LogicalVolume* logic_xlong_fiber_straight = new G4LogicalVolume(solid_xlong_fiber_straight,
+                                                              GetScintillatorMaterial(), "logic_xlong_fiber_straight",
+                                                              0, 0, 0);
+
+  // m_DisplayAction->AddVolume(logic_right_half_loop, "Scintillator");
+  m_DisplayAction->AddVolume(logic_left_half_loop, "Scintillator");
+  m_DisplayAction->AddVolume(logic_long_fiber_straight, "Scintillator");
+  m_DisplayAction->AddVolume(logic_xlong_fiber_straight, "Scintillator");
+  SurfaceTable(logic_left_half_loop, "logic_left_half_loop");
+  // SurfaceTable(logic_right_half_loop, "logic_right_half_loop");
+  SurfaceTable(logic_long_fiber_straight, "logic_long_fiber_straight");
+  SurfaceTable(logic_xlong_fiber_straight, "logic_xlong_fiber_straight");
+
+  G4VSolid* solid_cutout_left_half_loop = new G4Torus("solid_cutout_left_half_loop",
+                                                0, 1.07*fiber_thickness / 2.0,
+                                                min_fiber_bending_radius,
+                                                0.4 * M_PIl, 1.2 * M_PIl);
+  // G4VSolid* solid_cutout_right_half_loop = new G4Torus("solid_cutout_right_half_loop",
+  //                                               0, 1.07*fiber_thickness / 2.0,
+  //                                               min_fiber_bending_radius,
+  //                                               -0.6 * M_PIl, 1.2 * M_PIl);
+  G4VSolid* solid_cutout_long_fiber_straight = new G4Tubs("solid_cutout_long_fiber_straight",
+                                                    0,
+                                                    1.07*fiber_thickness / 2.0,
+                                                    1.05*(TowerDx - 2.0 * min_fiber_bending_radius - 2*edge_distance) / 2.0,
+                                                    0, 2.0 * M_PIl);
+  G4VSolid* solid_cutout_xlong_fiber_straight = new G4Tubs("solid_cutout_xlong_fiber_straight",
+                                                    0,
+                                                    1.07*fiber_thickness / 2.0,
+                                                    1.05*(TowerDx - min_fiber_bending_radius - edge_distance) / 2.0,
+                                                    0, 2.0 * M_PIl);
+  for(int iloop=-(nLoopsFiber-1)/2; iloop<=(nLoopsFiber-1)/2; iloop++){
+    if(iloop!=0){
+      G4RotationMatrix* rotm_fibr = new G4RotationMatrix();
+      rotm_fibr->rotateY(90 * deg);
+      G4double yshiftTmp = min_fiber_bending_radius;
+      if(iloop>0) yshiftTmp = -min_fiber_bending_radius;
+        solid_full_absorber_para_center = new G4SubtractionSolid("solid_full_absorber_para_mod1_" + std::to_string(iloop),
+                                                solid_full_absorber_para_center, solid_cutout_long_fiber_straight,
+                                                rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) + yshiftTmp, 0));
+      if(abs(iloop)==(nLoopsFiber-1)/2){
+        solid_full_absorber_para_center = new G4SubtractionSolid("solid_full_absorber_para_mod2_" + std::to_string(iloop),
+                                                solid_full_absorber_para_center, solid_cutout_xlong_fiber_straight,
+                                                rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0));
+        solid_full_absorber_para_right = new G4SubtractionSolid("solid_full_absorber_para_mod2r_" + std::to_string(iloop),
+                                                solid_full_absorber_para_right, solid_cutout_xlong_fiber_straight,
+                                                rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0));
+      }
+    }
+    if(iloop%2 == 0){
+        solid_full_absorber_para_left = new G4SubtractionSolid("solid_full_absorber_para_mod3_" + std::to_string(iloop),
+                                                solid_full_absorber_para_left, solid_cutout_left_half_loop,
+                                                0, G4ThreeVector(+min_fiber_bending_radius/2.0+edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0));
+    } else {
+      G4RotationMatrix* rotm_rcu = new G4RotationMatrix();
+      rotm_rcu->rotateY(180 * deg);
+        solid_full_absorber_para_right = new G4SubtractionSolid("solid_full_absorber_para_mod4_" + std::to_string(iloop),
+                                                solid_full_absorber_para_right, solid_cutout_left_half_loop,
+                                                rotm_rcu, G4ThreeVector(-min_fiber_bending_radius/2.0-edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0));
+    }
+  }
+
+  G4LogicalVolume* logic_full_absorber_para_left = new G4LogicalVolume(solid_full_absorber_para_left,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_left",
+                                                              0, 0, 0);
+  G4LogicalVolume* logic_full_absorber_para_center = new G4LogicalVolume(solid_full_absorber_para_center,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_center",
+                                                              0, 0, 0);
+  G4LogicalVolume* logic_full_absorber_para_right = new G4LogicalVolume(solid_full_absorber_para_right,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_right",
+                                                              0, 0, 0);
+  m_DisplayAction->AddVolume(logic_full_absorber_para_left, "Absorber");
+  m_DisplayAction->AddVolume(logic_full_absorber_para_center, "Absorber");
+  m_DisplayAction->AddVolume(logic_full_absorber_para_right, "Absorber");
+  new G4PVPlacement(0, G4ThreeVector(-(TowerDx - min_fiber_bending_radius - edge_distance) / 2.0, 0, 0),
+                    logic_full_absorber_para_left,
+                    "physvol_full_absorber_para_left",
+                    logic_full_loop_para,
+                    0, 0, OverlapCheck());
+  new G4PVPlacement(0, G4ThreeVector(0, 0, 0),
+                    logic_full_absorber_para_center,
+                    "physvol_full_absorber_para_center",
+                    logic_full_loop_para,
+                    0, 0, OverlapCheck());
+  new G4PVPlacement(0, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0, 0, 0),
+                    logic_full_absorber_para_right,
+                    "physvol_full_absorber_para_right",
+                    logic_full_loop_para,
+                    0, 0, OverlapCheck());
+
+  G4RotationMatrix* rotm_full_loop = new G4RotationMatrix();
+  rotm_full_loop->rotateZ(tilting_angle);
+  rotm_full_loop->rotateY(0.5*M_PIl);
+  //G4VPhysicalVolume* physvol_full_loop_para =
+
+  new G4PVPlacement(rotm_full_loop, G4ThreeVector(0, 0, 0),
+                    logic_full_loop_para,
+                    "physvol_full_loop_para",
+                    logic_full_loop_para_mother,
+                    0, 0, OverlapCheck());
+  G4VPhysicalVolume* physvol_long_fiber_straight[nLoopsFiber+2] = {nullptr};
+  G4VPhysicalVolume* physvol_xlong_fiber_straight[nLoopsFiber+2] = {nullptr};
+  G4VPhysicalVolume* physvol_left_half_loop[nLoopsFiber+2] = {nullptr};
+  G4VPhysicalVolume* physvol_right_half_loop[nLoopsFiber+2] = {nullptr};
+  int indxarr = 0;
+  for(int iloop=-(nLoopsFiber-1)/2-1; iloop<=(nLoopsFiber-1)/2+1; iloop++){
+    if(iloop!=0){
+      G4RotationMatrix* rotm_fibr = new G4RotationMatrix();
+      rotm_fibr->rotateY(90 * deg);
+      G4double yshiftTmp = min_fiber_bending_radius;
+      if(iloop>0) yshiftTmp = -min_fiber_bending_radius;
+      if(abs(iloop)!=(nLoopsFiber-1)/2+1){
+        physvol_long_fiber_straight[indxarr] =
+        new G4PVPlacement(rotm_fibr, G4ThreeVector(0, iloop*(2.0*min_fiber_bending_radius) + yshiftTmp, 0),
+                                                                    logic_long_fiber_straight,
+                                                                    "physvol_long_fiber_straight_" + std::to_string(iloop),
+                                                                    logic_full_loop_para,
+                                                                    0, 0, OverlapCheck());
+      }
+      if(abs(iloop)==(nLoopsFiber-1)/2){
+        physvol_xlong_fiber_straight[indxarr] =
+        new G4PVPlacement(rotm_fibr, G4ThreeVector((min_fiber_bending_radius + edge_distance) / 2.0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0),
+        // new G4PVPlacement(rotm_fibr, G4ThreeVector((min_fiber_bending_radius + edge_distance) / 2.0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0),
+                                                                    logic_xlong_fiber_straight,
+                                                                    "physvol_xlong_fiber_straight_" + std::to_string(iloop),
+                                                                    logic_full_loop_para,
+                                                                    0, 0, OverlapCheck());
+      }
+    }
+    indxarr++;
+  }
+  indxarr = 0;
+  for(int iloop=-(nLoopsFiber-1)/2-1; iloop<=(nLoopsFiber-1)/2+1; iloop++){
+    if(abs(iloop)<(nLoopsFiber-1)/2+1){
+      if(iloop%2 == 0){
+        physvol_left_half_loop[indxarr] =
+        new G4PVPlacement(0, G4ThreeVector(-(TowerDx - min_fiber_bending_radius - edge_distance) / 2.0+min_fiber_bending_radius/2.0 + edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
+                                                                    logic_left_half_loop,
+                                                                    "physvol_left_half_loop_" + std::to_string(iloop),
+                                                                    logic_full_loop_para,
+                                                                    0, 0, OverlapCheck());
+        if(physvol_long_fiber_straight[indxarr+1]){
+          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+1],physvol_left_half_loop[indxarr],"long_left_+1_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr+1],"left_long_+1_boundary" + std::to_string(iloop));
+        }
+        if(physvol_long_fiber_straight[indxarr]){
+          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr],physvol_left_half_loop[indxarr],"long_left_0_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr],"left_long_0_boundary" + std::to_string(iloop));
+        }
+        if(indxarr>0){
+          if(physvol_long_fiber_straight[indxarr-1]){
+            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr-1],physvol_left_half_loop[indxarr],"long_left_-1_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr-1],"left_long_-1_boundary" + std::to_string(iloop));
+          }
+        }
+        if(physvol_xlong_fiber_straight[indxarr+1]){
+          MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr+1],physvol_left_half_loop[indxarr],"xlong_left_+1_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr+1],"left_xlong_+1_boundary" + std::to_string(iloop));
+        }
+        if(physvol_xlong_fiber_straight[indxarr]){
+          MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr],physvol_left_half_loop[indxarr],"xlong_left_0_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr],"left_xlong_0_boundary" + std::to_string(iloop));
+        }
+        if(indxarr>0){
+          if(physvol_xlong_fiber_straight[indxarr-1]){
+            MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr-1],physvol_left_half_loop[indxarr],"xlong_left_-1_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr-1],"left_xlong_-1_boundary" + std::to_string(iloop));
+          }
+        }
+      } else {
+      G4RotationMatrix* rotm_loop2 = new G4RotationMatrix();
+      rotm_loop2->rotateY(180 * deg);
+      rotm_loop2->rotateX(180 * deg);
+        physvol_right_half_loop[indxarr] =
+        new G4PVPlacement(rotm_loop2, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0-min_fiber_bending_radius/2.0 - edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
+                                                                    logic_left_half_loop,
+                                                                    "physvol_right_half_loop_" + std::to_string(iloop),
+                                                                    logic_full_loop_para,
+                                                                    0, 0, OverlapCheck());
+        // new G4PVPlacement(0, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0-min_fiber_bending_radius/2.0 - edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
+        //                                                             logic_right_half_loop,
+        //                                                             "physvol_right_half_loop_" + std::to_string(iloop),
+        //                                                             logic_full_loop_para,
+        //                                                             0, 0, OverlapCheck());
+        if(physvol_long_fiber_straight[indxarr+1]){
+          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+1],physvol_right_half_loop[indxarr],"long_right_+1_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr+1],"right_long_+1_boundary" + std::to_string(iloop));
+        }
+        if(physvol_long_fiber_straight[indxarr]){
+          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr],physvol_right_half_loop[indxarr],"long_right_0_boundary" + std::to_string(iloop));
+          MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr],"right_long_0_boundary" + std::to_string(iloop));
+        }
+        if(indxarr>0){
+          if(physvol_long_fiber_straight[indxarr-1]){
+            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr-1],physvol_right_half_loop[indxarr],"long_right_-1_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr-1],"right_long_-1_boundary" + std::to_string(iloop));
+          }
+        }
+      }
+    }
+    indxarr++;
+  }
+  G4double length_replsolid = TowerDz - sqrt(pow(loop_total_height,2)-pow(TowerDx,2))-1*cm;
+  G4VSolid* solid_TF_Replica = new G4Para("DRCalRowBox",
+                                                length_replsolid / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+                                                tilting_angle, 0, 0);
+  auto logic_TF_Replica  = new G4LogicalVolume(solid_TF_Replica,G4Material::GetMaterial("G4_AIR"),"logic_TF_Replica");
+  int nLayers = (int) (length_replsolid) / (fiber_thickness + fiber_spacing);
+  for(int ilay = 0; ilay<nLayers;ilay++){
+    int copynumber = ilay;
+    new G4PVPlacement(0, G4ThreeVector(-length_replsolid/2+(fiber_thickness + fiber_spacing)/2+ilay*(fiber_thickness + fiber_spacing), 0, 0),
+                            logic_full_loop_para_mother, "placed_mother_layer_" + std::to_string(ilay), logic_TF_Replica, 0, copynumber, OverlapCheck());
+
+  }
+
+  // G4VSolid* solid_TF_Replica = new G4Para("DRCalRowBox",
+  //                                               (TowerDz) / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+  //                                               tilting_angle, 0, 0);
+  // // auto solid_TF_Replica    = new G4Box("DRCalRowBox",1.01*TowerDz / 2.0, 1.01*TowerDx / 2.0,1.01*TowerDx / 2.0);
+  // auto logic_TF_Replica  = new G4LogicalVolume(solid_TF_Replica,G4Material::GetMaterial("G4_AIR"),"logic_TF_Replica");
+  m_DisplayAction->AddVolume(logic_TF_Replica, "ParaEnvelope");
+  // // replicate singletower tower design currRowNtow times along x-axis
+  // // int nReplicas = (int) (TowerDz - sqrt(pow(loop_total_height,2)-pow(TowerDx,2))) / paraBoxWidth;
+  // int nReplicas = (int) (TowerDz) / (fiber_thickness + fiber_spacing);
+  // // int nReplicas = (int) (TowerDz - sqrt(pow(loop_total_height,2)-pow(TowerDx,2))) / (fiber_thickness + fiber_spacing);
+  // new G4PVReplica("DRCalRowPhysical",logic_full_loop_para_mother,logic_TF_Replica,
+  //                 kXAxis,nReplicas,(fiber_thickness + fiber_spacing),0);
+  G4RotationMatrix* rotm_loop_stack = new G4RotationMatrix();
+  rotm_loop_stack->rotateY(0.5*M_PIl);
+  new G4PVPlacement(rotm_loop_stack, G4ThreeVector(0, 0, 0),
+                          logic_TF_Replica, "blubb", logic_envelope, 0, false, OverlapCheck());
   return true;
 }
 //_______________________________________________________________________
@@ -379,25 +680,25 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                                             0,
                                             copperTubeOuterDiam / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
   G4VSolid* solid_absorber  = new G4Tubs(G4String("ttl_copper_tube_solid"),
                                             copperTubeInnerDiam / 2.0,
                                             copperTubeOuterDiam / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
   G4VSolid* solid_scintillator  = new G4Tubs(G4String("single_scintillator_fiber"),
                                             0,
                                             diameter_fiber / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
   // G4VSolid* solid_airgap  = new G4Tubs(G4String("single_airgap"),
   //                                           diameter_fiber / 2.0,
   //                                           copperTubeInnerDiam / 2.0,
   //                                           _tower_dz / 2.0,
-  //                                           0.,2*M_PI*rad);
+  //                                           0.,2*M_PIl*rad);
 
 
   G4Material* material_scintillator = GetScintillatorMaterial();
@@ -433,7 +734,7 @@ bool PHG4FoCalDetector::ConstructCapillaryRowDetector(int type,G4LogicalVolume* 
                                                     "hfocal_single_scintillator_fiber_logic",
                                                     0, 0, 0);
   if(m_doLightProp){
-    SurfaceTable(logic_scint);
+    SurfaceTable(logic_scint, "hfocal_single_scintillator_fiber_logic");
     // SurfaceTable(logic_absorber);
   }
   m_DisplayAction->AddVolume(logic_filledcap, "FfocalEnvelope");
@@ -607,31 +908,31 @@ PHG4FoCalDetector::ConstructTower(int type)
                                             0,
                                             copperTubeDiam / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
   G4VSolid* solid_scintillator  = new G4Tubs(G4String("single_scintillator_fiber"),
                                             0,
                                             diameter_fiber / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
 
   G4VSolid* solid_cherenkov  = new G4Tubs(G4String("single_cherenkov_fiber"),
                                             0,
                                             diameter_fiber_cherenkov / 2.0,
                                             _tower_dz / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
   G4VSolid* solid_fiberMargin  = new G4Tubs(G4String("solid_fiberMargin"),
                                             0,
                                             (diameter_fiber_cherenkov+0.05*mm) / 2.0,
                                             (_tower_dz*1.1) / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
   G4VSolid* solid_absorberMargin  = new G4Tubs(G4String("solid_absorberMargin"),
                                             0,
                                             (copperTubeDiam+0.05*mm) / 2.0,
                                             (_tower_dz*1.1) / 2.0,
-                                            0.,2*M_PI*rad);
+                                            0.,2*M_PIl*rad);
 
 
   G4Material* material_scintillator = GetScintillatorMaterial();
@@ -741,7 +1042,7 @@ PHG4FoCalDetector::ConstructTower(int type)
                       single_tower_logic,
                       0, 0, OverlapCheck());
     G4RotationMatrix *filling_rotup = new G4RotationMatrix();
-    filling_rotup->rotateZ(M_PI);
+    filling_rotup->rotateZ(M_PIl);
     new G4PVPlacement(filling_rotup, G4ThreeVector( 0,  copperTubeDiam / 4.0 , 0),
                       logic_fill_hollowspace,
                       name_fill.str().c_str(),
@@ -753,7 +1054,7 @@ PHG4FoCalDetector::ConstructTower(int type)
                       single_tower_logic,
                       0, 0, OverlapCheck());
     G4RotationMatrix *filling_rotleft = new G4RotationMatrix();
-    filling_rotleft->rotateZ(M_PI/2);
+    filling_rotleft->rotateZ(M_PIl/2);
     new G4PVPlacement(filling_rotleft, G4ThreeVector( _tower_dx/2 - copperTubeDiam / 4.0,  0 , 0),
                       logic_fill_hollowspace,
                       name_fill.str().c_str(),
@@ -765,7 +1066,7 @@ PHG4FoCalDetector::ConstructTower(int type)
                       single_tower_logic,
                       0, 0, OverlapCheck());
     G4RotationMatrix *filling_rotright = new G4RotationMatrix();
-    filling_rotright->rotateZ(-M_PI/2);
+    filling_rotright->rotateZ(-M_PIl/2);
     new G4PVPlacement(filling_rotright, G4ThreeVector( -_tower_dx/2 + copperTubeDiam / 4.0,  0 , 0),
                       logic_fill_hollowspace,
                       name_fill.str().c_str(),
@@ -927,111 +1228,161 @@ PHG4FoCalDetector::ConstructTowerLayered(int type)
 G4Material*
 PHG4FoCalDetector::GetScintillatorMaterial()
 {
-  if (Verbosity() > 0)
-  {
-    cout << "PHG4FoCalDetector: Making Scintillator material..." << endl;
+  G4Material *material_G4_POLYSTYRENE = G4Material::GetMaterial("G4_POLYSTYRENE_FOCAL");
+
+  if (!material_G4_POLYSTYRENE){
+    if (Verbosity() > 0)
+    {
+      cout << "PHG4FoCalDetector: Making Scintillator material..." << endl;
+    }
+    G4double density;
+    G4int ncomponents;
+    material_G4_POLYSTYRENE = new G4Material("G4_POLYSTYRENE_FOCAL", density = 1.05 * g / cm3, ncomponents = 2);
+    material_G4_POLYSTYRENE->AddElement(G4Element::GetElement("C"), 8);
+    material_G4_POLYSTYRENE->AddElement(G4Element::GetElement("H"), 8);
+    material_G4_POLYSTYRENE->GetIonisation()->SetBirksConstant(0.126*mm/MeV);
+
+
+    G4MaterialPropertiesTable *tab = new G4MaterialPropertiesTable();
+
+    const G4int ntab = 31;
+    tab->AddConstProperty("FASTTIMECONSTANT", 2.8*ns); // was 6
+    // tab->AddConstProperty("SCINTILLATIONYIELD", 13.9/keV); // was 200/MEV nominal  10
+    tab->AddConstProperty("SCINTILLATIONYIELD", 2/keV);//1.39/keV); // was 200/MEV nominal  10
+    // tab->AddConstProperty("SCINTILLATIONYIELD", 200/MeV); // was 200/MEV nominal, should maybe be 13.9/keV
+    tab->AddConstProperty("RESOLUTIONSCALE", 1.0);
+
+    G4double opt_en[] =
+      { 1.37760*eV, 1.45864*eV, 1.54980*eV, 1.65312*eV, 1.71013*eV, 1.77120*eV, 1.83680*eV, 1.90745*eV, 1.98375*eV, 2.06640*eV,
+        2.10143*eV, 2.13766*eV, 2.17516*eV, 2.21400*eV, 2.25426*eV, 2.29600*eV, 2.33932*eV, 2.38431*eV, 2.43106*eV, 2.47968*eV,
+        2.53029*eV, 2.58300*eV, 2.63796*eV, 2.69531*eV, 2.75520*eV, 2.81782*eV, 2.88335*eV, 2.95200*eV, 3.09960*eV, 3.54241*eV,
+        4.13281*eV }; // 350 - 800 nm
+    G4double scin_fast[] =
+      { 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0003, 0.0008, 0.0032,
+        0.0057, 0.0084, 0.0153, 0.0234, 0.0343, 0.0604, 0.0927, 0.1398, 0.2105, 0.2903,
+        0.4122, 0.5518, 0.7086, 0.8678, 1.0000, 0.8676, 0.2311, 0.0033, 0.0012, 0.0000,
+        0 };
+    tab->AddProperty("FASTCOMPONENT", opt_en, scin_fast, ntab);
+
+    G4double opt_r[] =
+      { 1.5749, 1.5764, 1.5782, 1.5803, 1.5815, 1.5829, 1.5845, 1.5862, 1.5882, 1.5904,
+        1.5914, 1.5924, 1.5935, 1.5947, 1.5959, 1.5972, 1.5986, 1.6000, 1.6016, 1.6033,
+        1.6051, 1.6070, 1.6090, 1.6112, 1.6136, 1.6161, 1.6170, 1.6230, 1.62858, 1.65191,
+        1.69165 };
+    tab->AddProperty("RINDEX", opt_en, opt_r, ntab);
+
+    G4double opt_abs[] =
+      { 2.714*m, 3.619*m, 5.791*m, 4.343*m, 7.896*m, 5.429*m, 36.19*m, 17.37*m, 36.19*m, 5.429*m,
+        13.00*m, 14.50*m, 16.00*m, 18.00*m, 16.50*m, 17.00*m, 14.00*m, 16.00*m, 15.00*m, 14.50*m,
+        13.00*m, 12.00*m, 10.00*m, 8.000*m, 7.238*m, 4.000*m, 1.200*m, 0.500*m, 0.200*m, 0.200*m,
+        0.100*m };
+    tab->AddProperty("ABSLENGTH", opt_en, opt_abs, ntab);
+
+    material_G4_POLYSTYRENE->SetMaterialPropertiesTable(tab);
+
+
+
+
+    // const G4int nEntries = 50;
+    // G4double photonEnergy[nEntries] =
+    //     {2.00 * eV, 2.03 * eV, 2.06 * eV, 2.09 * eV, 2.12 * eV,
+    //      2.15 * eV, 2.18 * eV, 2.21 * eV, 2.24 * eV, 2.27 * eV,
+    //      2.30 * eV, 2.33 * eV, 2.36 * eV, 2.39 * eV, 2.42 * eV,
+    //      2.45 * eV, 2.48 * eV, 2.51 * eV, 2.54 * eV, 2.57 * eV,
+    //      2.60 * eV, 2.63 * eV, 2.66 * eV, 2.69 * eV, 2.72 * eV,
+    //      2.75 * eV, 2.78 * eV, 2.81 * eV, 2.84 * eV, 2.87 * eV,
+    //      2.90 * eV, 2.93 * eV, 2.96 * eV, 2.99 * eV, 3.02 * eV,
+    //      3.05 * eV, 3.08 * eV, 3.11 * eV, 3.14 * eV, 3.17 * eV,
+    //      3.20 * eV, 3.23 * eV, 3.26 * eV, 3.29 * eV, 3.32 * eV,
+    //      3.35 * eV, 3.38 * eV, 3.41 * eV, 3.44 * eV, 3.47 * eV};
+    // G4double scintilFast[nEntries] =
+    //     {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    //      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    //      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    //      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    //      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+    // const G4int ntab = 4;
+
+    // G4double wls_Energy[] = {2.00 * eV, 2.87 * eV, 2.90 * eV,
+    //                          3.47 * eV};
+
+    // G4double rIndexPstyrene[] = {1.5, 1.5, 1.5, 1.5};
+    // // G4double absorption1[] = {2. * m, 2. * m, 2. * m, 2. * m};
+    // G4MaterialPropertiesTable* fMPTPStyrene = new G4MaterialPropertiesTable();
+    // fMPTPStyrene->AddProperty("RINDEX", wls_Energy, rIndexPstyrene, ntab);
+    // fMPTPStyrene->AddProperty("ABSLENGTH", opt_en, opt_abs, ntab);
+    // // fMPTPStyrene->AddProperty("ABSLENGTH", wls_Energy, absorption1, ntab);
+    // fMPTPStyrene->AddProperty("SCINTILLATIONCOMPONENT1", photonEnergy, scintilFast, nEntries);
+    // fMPTPStyrene->AddConstProperty("SCINTILLATIONYIELD", 10. / keV);
+    // fMPTPStyrene->AddConstProperty("RESOLUTIONSCALE", 1.0);
+    // fMPTPStyrene->AddConstProperty("SCINTILLATIONTIMECONSTANT", 10. * ns);
+
+    // material_G4_POLYSTYRENE->SetMaterialPropertiesTable(fMPTPStyrene);
+
+
+
+    if (Verbosity() > 0)
+    {
+      cout << "PHG4FoCalDetector:  Making Scintillator material done." << endl;
+    }
   }
-
-
-  G4MaterialPropertiesTable *tab = new G4MaterialPropertiesTable();
-
-  const G4int ntab = 31;
-  tab->AddConstProperty("FASTTIMECONSTANT", 2.8*ns); // was 6
-  // tab->AddConstProperty("SCINTILLATIONYIELD", 13.9/keV); // was 200/MEV nominal  10
-  tab->AddConstProperty("SCINTILLATIONYIELD", 1.39/keV); // was 200/MEV nominal  10
-  // tab->AddConstProperty("SCINTILLATIONYIELD", 200/MeV); // was 200/MEV nominal, should maybe be 13.9/keV
-  tab->AddConstProperty("RESOLUTIONSCALE", 1.0);
-
-  G4double opt_en[] =
-    { 1.37760*eV, 1.45864*eV, 1.54980*eV, 1.65312*eV, 1.71013*eV, 1.77120*eV, 1.83680*eV, 1.90745*eV, 1.98375*eV, 2.06640*eV,
-      2.10143*eV, 2.13766*eV, 2.17516*eV, 2.21400*eV, 2.25426*eV, 2.29600*eV, 2.33932*eV, 2.38431*eV, 2.43106*eV, 2.47968*eV,
-      2.53029*eV, 2.58300*eV, 2.63796*eV, 2.69531*eV, 2.75520*eV, 2.81782*eV, 2.88335*eV, 2.95200*eV, 3.09960*eV, 3.54241*eV,
-      4.13281*eV }; // 350 - 800 nm
-  G4double scin_fast[] =
-    { 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0003, 0.0008, 0.0032,
-      0.0057, 0.0084, 0.0153, 0.0234, 0.0343, 0.0604, 0.0927, 0.1398, 0.2105, 0.2903,
-      0.4122, 0.5518, 0.7086, 0.8678, 1.0000, 0.8676, 0.2311, 0.0033, 0.0012, 0.0000,
-      0 };
-  tab->AddProperty("FASTCOMPONENT", opt_en, scin_fast, ntab);
-
-  G4double opt_r[] =
-    { 1.5749, 1.5764, 1.5782, 1.5803, 1.5815, 1.5829, 1.5845, 1.5862, 1.5882, 1.5904,
-      1.5914, 1.5924, 1.5935, 1.5947, 1.5959, 1.5972, 1.5986, 1.6000, 1.6016, 1.6033,
-      1.6051, 1.6070, 1.6090, 1.6112, 1.6136, 1.6161, 1.6170, 1.6230, 1.62858, 1.65191,
-      1.69165 };
-  tab->AddProperty("RINDEX", opt_en, opt_r, ntab);
-
-  G4double opt_abs[] =
-    { 2.714*m, 3.619*m, 5.791*m, 4.343*m, 7.896*m, 5.429*m, 36.19*m, 17.37*m, 36.19*m, 5.429*m,
-      13.00*m, 14.50*m, 16.00*m, 18.00*m, 16.50*m, 17.00*m, 14.00*m, 16.00*m, 15.00*m, 14.50*m,
-      13.00*m, 12.00*m, 10.00*m, 8.000*m, 7.238*m, 4.000*m, 1.200*m, 0.500*m, 0.200*m, 0.200*m,
-      0.100*m };
-  tab->AddProperty("ABSLENGTH", opt_en, opt_abs, ntab);
-
-	G4double density;
-	G4int ncomponents;
-  // G4Material* material_G4_POLYSTYRENE = G4Material::GetMaterial(_materialScintillator.c_str());
-  G4Material* material_G4_POLYSTYRENE = new G4Material("G4_POLYSTYRENE", density = 1.05 * g / cm3, ncomponents = 2);
-  material_G4_POLYSTYRENE->AddElement(G4Element::GetElement("C"), 8);
-  material_G4_POLYSTYRENE->AddElement(G4Element::GetElement("H"), 8);
-  material_G4_POLYSTYRENE->GetIonisation()->SetBirksConstant(0.126*mm/MeV);
-  material_G4_POLYSTYRENE->SetMaterialPropertiesTable(tab);
-
-  if (Verbosity() > 0)
-  {
-    cout << "PHG4FoCalDetector:  Making Scintillator material done." << endl;
-  }
-
   return material_G4_POLYSTYRENE;
 }
+
+
+
+
 
 //_______________________________________________________________________
 G4Material*
 PHG4FoCalDetector::GetPMMAMaterial()
 {
-  if (Verbosity() > 0)
-  {
-    cout << "PHG4FoCalDetector: Making PMMA material..." << endl;
+  G4Material *material_PMMA = G4Material::GetMaterial("PMMA_FOCAL");
+  if (!material_PMMA){
+    if (Verbosity() > 0)
+    {
+      cout << "PHG4FoCalDetector: Making PMMA material..." << endl;
+    }
+
+    G4double density;
+    G4int ncomponents;
+
+    material_PMMA = new G4Material("PMMA_FOCAL", density = 1.18 * g / cm3, ncomponents = 3);
+    material_PMMA->AddElement(G4Element::GetElement("C"), 5);
+    material_PMMA->AddElement(G4Element::GetElement("H"), 8);
+    material_PMMA->AddElement(G4Element::GetElement("O"), 2);
+
+    const G4int nEntries = 31;
+
+    G4double photonEnergy[nEntries] =
+      { 1.37760*eV, 1.45864*eV, 1.54980*eV, 1.65312*eV, 1.71013*eV, 1.77120*eV, 1.83680*eV, 1.90745*eV, 1.98375*eV, 2.06640*eV,
+        2.10143*eV, 2.13766*eV, 2.17516*eV, 2.21400*eV, 2.25426*eV, 2.29600*eV, 2.33932*eV, 2.38431*eV, 2.43106*eV, 2.47968*eV,
+        2.53029*eV, 2.58300*eV, 2.63796*eV, 2.69531*eV, 2.75520*eV, 2.81782*eV, 2.88335*eV, 2.95200*eV, 3.09960*eV, 3.54241*eV,
+        4.13281*eV };
+    G4double refractiveIndexWLSfiber[nEntries] =
+      { 1.4852, 1.4859, 1.4867, 1.4877, 1.4882, 1.4888, 1.4895, 1.4903, 1.4911, 1.4920,
+        1.4924, 1.4929, 1.4933, 1.4938, 1.4943, 1.4948, 1.4954, 1.4960, 1.4966, 1.4973,
+        1.4981, 1.4989, 1.4997, 1.5006, 1.5016, 1.5026, 1.5038, 1.5050, 1.5052, 1.5152,
+        1.5306 };
+
+    G4double absWLSfiber[nEntries] =
+      { 0.414*m, 0.965*m, 2.171*m, 4.343*m, 1.448*m, 4.343*m, 14.48*m, 21.71*m, 8.686*m, 39.48*m,
+        48.25*m, 54.29*m, 57.91*m, 54.29*m, 33.40*m, 31.02*m, 43.43*m, 43.43*m, 41.36*m, 39.48*m,
+        37.76*m, 36.19*m, 36.19*m, 33.40*m, 31.02*m, 28.95*m, 25.55*m, 24.13*m, 21.71*m, 2.171*m,
+        0.434*m };
+
+
+    // Add entries into properties table
+    G4MaterialPropertiesTable* mptWLSfiber = new G4MaterialPropertiesTable();
+    mptWLSfiber->AddProperty("RINDEX",photonEnergy,refractiveIndexWLSfiber,nEntries);
+    mptWLSfiber->AddProperty("ABSLENGTH",photonEnergy,absWLSfiber,nEntries);
+    material_PMMA->SetMaterialPropertiesTable(mptWLSfiber);
+    if (Verbosity() > 0)
+    {
+      cout << "PHG4FoCalDetector:  Making PMMA material done." << endl;
+    }
   }
-
-	G4double density;
-	G4int ncomponents;
-
-  G4Material* material_PMMA = new G4Material("PMMA", density = 1.18 * g / cm3, ncomponents = 3);
-  material_PMMA->AddElement(G4Element::GetElement("C"), 5);
-  material_PMMA->AddElement(G4Element::GetElement("H"), 8);
-  material_PMMA->AddElement(G4Element::GetElement("O"), 2);
-
-  const G4int nEntries = 31;
-
-  G4double photonEnergy[nEntries] =
-    { 1.37760*eV, 1.45864*eV, 1.54980*eV, 1.65312*eV, 1.71013*eV, 1.77120*eV, 1.83680*eV, 1.90745*eV, 1.98375*eV, 2.06640*eV,
-      2.10143*eV, 2.13766*eV, 2.17516*eV, 2.21400*eV, 2.25426*eV, 2.29600*eV, 2.33932*eV, 2.38431*eV, 2.43106*eV, 2.47968*eV,
-      2.53029*eV, 2.58300*eV, 2.63796*eV, 2.69531*eV, 2.75520*eV, 2.81782*eV, 2.88335*eV, 2.95200*eV, 3.09960*eV, 3.54241*eV,
-      4.13281*eV };
-  G4double refractiveIndexWLSfiber[nEntries] =
-    { 1.4852, 1.4859, 1.4867, 1.4877, 1.4882, 1.4888, 1.4895, 1.4903, 1.4911, 1.4920,
-      1.4924, 1.4929, 1.4933, 1.4938, 1.4943, 1.4948, 1.4954, 1.4960, 1.4966, 1.4973,
-      1.4981, 1.4989, 1.4997, 1.5006, 1.5016, 1.5026, 1.5038, 1.5050, 1.5052, 1.5152,
-      1.5306 };
-
-  G4double absWLSfiber[nEntries] =
-    { 0.414*m, 0.965*m, 2.171*m, 4.343*m, 1.448*m, 4.343*m, 14.48*m, 21.71*m, 8.686*m, 39.48*m,
-      48.25*m, 54.29*m, 57.91*m, 54.29*m, 33.40*m, 31.02*m, 43.43*m, 43.43*m, 41.36*m, 39.48*m,
-      37.76*m, 36.19*m, 36.19*m, 33.40*m, 31.02*m, 28.95*m, 25.55*m, 24.13*m, 21.71*m, 2.171*m,
-      0.434*m };
-
-
-  // Add entries into properties table
-  G4MaterialPropertiesTable* mptWLSfiber = new G4MaterialPropertiesTable();
-  mptWLSfiber->AddProperty("RINDEX",photonEnergy,refractiveIndexWLSfiber,nEntries);
-  mptWLSfiber->AddProperty("ABSLENGTH",photonEnergy,absWLSfiber,nEntries);
-  material_PMMA->SetMaterialPropertiesTable(mptWLSfiber);
-  if (Verbosity() > 0)
-  {
-    cout << "PHG4FoCalDetector:  Making PMMA material done." << endl;
-  }
-
   return material_PMMA;
 }
 
@@ -1137,11 +1488,11 @@ PHG4FoCalDetector::GetQuartzMaterial()
 }
 
 //_____________________________________________________________________________
-void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol) {
+void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol,  G4String  name) {
 
-  G4OpticalSurface *surface = new G4OpticalSurface("ScintWrapB1");
+  G4OpticalSurface *surface = new G4OpticalSurface(name + "_OPSurf");
 
-  new G4LogicalSkinSurface("CrystalSurfaceL", vol, surface);
+  new G4LogicalSkinSurface( name + "_LogSkinSurf", vol, surface);
 
   // surface->SetType(dielectric_dielectric);
   surface->SetType(dielectric_metal);
@@ -1154,12 +1505,12 @@ void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol) {
 
   //surface material
   const G4int ntab = 2;
-  G4double opt_en[] = {1.551*eV, 3.545*eV}; // 350 - 800 nm
+  G4double opt_en[] = {1.451*eV, 3.645*eV}; // 350 - 800 nm
   G4double reflectivity[] = {0.99, 0.99};
-  // G4double efficiency[] = {0.07, 0.07};
+  G4double efficiency[] = {0.99, 0.99};
   G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
   surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
-  // surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
+  surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
   surface->SetMaterialPropertiesTable(surfmat);
   //csurf->DumpInfo();
 
@@ -1167,11 +1518,11 @@ void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol) {
 
 
 //_____________________________________________________________________________
-void PHG4FoCalDetector::MakeBoundary(G4VPhysicalVolume *fromVol, G4VPhysicalVolume *toVol) {
+void PHG4FoCalDetector::MakeBoundaryFibers(G4VPhysicalVolume *fromVol, G4VPhysicalVolume *toVol, G4String name) {
 
   //optical boundary between the fromVol and optical photons detector
 
-  G4OpticalSurface *surf = new G4OpticalSurface("OpDetS");
+  G4OpticalSurface *surf = new G4OpticalSurface(name +"_OpDetS1");
   surf->SetType(dielectric_dielectric); // photons go to the detector, must have rindex defined
   // surf->SetType(dielectric_metal); // photon is absorbed when reaching the detector, no material rindex required
   //surf->SetFinish(ground);
@@ -1179,20 +1530,22 @@ void PHG4FoCalDetector::MakeBoundary(G4VPhysicalVolume *fromVol, G4VPhysicalVolu
   //surf->SetModel(unified);
   surf->SetModel(glisur);
 
-  new G4LogicalBorderSurface("OpDetB", fromVol, toVol, surf);
+  new G4LogicalBorderSurface(name +"OpDetBS", fromVol, toVol, surf);
 
   const G4int ntab = 2;
-  G4double opt_en[] = {1.551*eV, 3.545*eV}; // 350 - 800 nm
+  G4double opt_en[] = {1.051*eV, 4.545*eV}; // 350 - 800 nm
   //G4double reflectivity[] = {0., 0.};
-  G4double reflectivity[] = {0.99, 0.99};
+  G4double reflectivity[] = {0.0, 0.0};
   //G4double reflectivity[] = {1., 1.};
-  G4double efficiency[] = {1., 1.};
-  G4double RefractiveIndexBoundary[] = { 1.0, 1.0};
+  // G4double efficiency[] = {1., 1.};
+  G4double transmittance[] = { 1.0, 1.0 };
+  G4double RefractiveIndexBoundary[] = { 1.5, 1.5};
 
   G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
-  surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
+  // surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
   surfmat->AddProperty("RINDEX", opt_en, RefractiveIndexBoundary, ntab);
   surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
+  surfmat->AddProperty("TRANSMITTANCE", opt_en, transmittance, ntab);
   surf->SetMaterialPropertiesTable(surfmat);
 
 

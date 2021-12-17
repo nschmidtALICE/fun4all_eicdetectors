@@ -44,11 +44,20 @@ void PHG4FoCalDisplayAction::ApplyDisplayAction(G4VPhysicalVolume *physvol)
     if (it.second == "Absorber")
     {
       // visatt->SetColour(G4Colour::Gray());
-      visatt->SetColour(G4Colour(184. / 255, 115. / 255, 51. / 255));
+      visatt->SetColour(G4Colour(184. / 255, 115. / 255, 51. / 255, 0.5));
+      // visatt->SetColour(G4Colour(184. / 255, 115. / 255, 51. / 255, 1));
+      // visatt->SetForceWireframe(true);
     }
     else if (it.second == "FfocalEnvelope")
     {
+      // visatt->SetVisibility(false);
+      visatt->SetColour(G4Colour::Gray());
+      visatt->SetForceWireframe(true);
+    }
+    else if (it.second == "ParaEnvelope")
+    {
       visatt->SetVisibility(false);
+      visatt->SetColour(G4Colour::Red());
       visatt->SetForceWireframe(true);
     }
     else if (it.second == "Tungsten")
