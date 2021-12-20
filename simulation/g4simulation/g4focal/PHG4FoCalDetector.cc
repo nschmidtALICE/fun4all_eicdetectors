@@ -95,20 +95,27 @@ int PHG4FoCalDetector::IsInFoCal(G4VPhysicalVolume* volume) const
 {
   if (volume->GetName().find(_towerlogicnameprefix) != string::npos)
   {
-    if (volume->GetName().find("scintillator") != string::npos)
+    if (volume->GetName().find("SiPM") != string::npos)
     {
       if (_active)
         return 1;
       else
         return 0;
     }
-    else if (volume->GetName().find("cherenkov") != string::npos)
-    {
-      if (_active)
-        return 1;
-      else
-        return 0;
-    }
+    // else if (volume->GetName().find("scintillator") != string::npos)
+    // {
+    //   if (_active)
+    //     return 1;
+    //   else
+    //     return 0;
+    // }
+    // else if (volume->GetName().find("cherenkov") != string::npos)
+    // {
+    //   if (_active)
+    //     return 1;
+    //   else
+    //     return 0;
+    // }
     //only record energy in actual absorber- drop energy lost in air gaps inside focal envelope
     else if (volume->GetName().find("absorber") != string::npos)
     {
@@ -356,17 +363,23 @@ void PHG4FoCalDetector::ConstructMe(G4LogicalVolume* logicWorld)
 //_______________________________________________________________________
 bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* logic_envelope)
 {
-  G4double TowerDx = _rMax1*2;
+  G4double TowerDx = _rMax1*2-1*mm;
+  G4double TowerDy = _rMax1*2;
   G4double TowerDz = _tower_dz;
   G4double fiber_spacing = 2*mm;
   G4double edge_distance = 5*mm;
 
   G4double fiber_thickness = 1.0*mm;
   G4double min_fiber_bending_radius = 1.25*cm;
+
+  G4double SiPMDx = fiber_thickness+fiber_spacing/2-0.1*mm;
+  G4double SiPMDy = fiber_thickness+fiber_spacing/2-0.1*mm;
+  G4double SiPMDz = 0.1*mm;
+
   // provide an angle for the fiber loop tilt -> must be greater than Moliere spread
   G4double tilting_angle = 0.25 * M_PIl;
   // total height of the tilted loop for the given angle within the tower dimensions
-  G4double loop_total_height = TowerDx / sin(tilting_angle);
+  G4double loop_total_height = TowerDy / sin(tilting_angle);
   loop_total_height -= 2*sqrt(pow((fiber_thickness + fiber_spacing)/2.0,2)-pow(((fiber_thickness + fiber_spacing) * sin(tilting_angle))/2.0,2));
   // number of loops possible with the minimum bending radius
   int nLoopsFiber = (int) (loop_total_height/(2 * min_fiber_bending_radius));
@@ -375,22 +388,22 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
 
 
   G4VSolid* solid_full_loop_para_mother = new G4Para("solid_full_loop_para_mother",
-                                                (fiber_thickness + fiber_spacing) / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+                                                (fiber_thickness + fiber_spacing) / 2.0, (TowerDx+1*mm) / 2.0, TowerDy / 2.0,
                                                 tilting_angle, 0, 0);
   G4double paraBoxWidth = (fiber_thickness + fiber_spacing) * sin(tilting_angle);
 
-  G4VSolid* solid_full_loop_para = new G4Box("solid_full_loop_para",
-                                                TowerDx / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
-  G4LogicalVolume* logic_full_loop_para = new G4LogicalVolume(solid_full_loop_para,
-                                                              G4Material::GetMaterial("G4_AIR"), "logic_full_loop_para",
+  G4VSolid* solid_full_loop_box = new G4Box("solid_full_loop_box",
+                                                (TowerDx+1*mm) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
+  G4LogicalVolume* logic_full_loop_box = new G4LogicalVolume(solid_full_loop_box,
+                                                              G4Material::GetMaterial("G4_AIR"), "logic_full_loop_box",
                                                               0, 0, 0);
-  m_DisplayAction->AddVolume(logic_full_loop_para, "Invisible");
+  m_DisplayAction->AddVolume(logic_full_loop_box, "Invisible");
 
-  G4VSolid* solid_full_absorber_para_left = new G4Box("solid_full_absorber_para_left",
+  G4VSolid* solid_full_absorber_left = new G4Box("solid_full_absorber_left",
                                                 (min_fiber_bending_radius + edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
-  G4VSolid* solid_full_absorber_para_center = new G4Box("solid_full_absorber_para_center",
+  G4VSolid* solid_full_absorber_center = new G4Box("solid_full_absorber_center",
                                                 (TowerDx - 2.0 * min_fiber_bending_radius - 2.0 * edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
-  G4VSolid* solid_full_absorber_para_right = new G4Box("solid_full_absorber_para_right",
+  G4VSolid* solid_full_absorber_right = new G4Box("solid_full_absorber_right",
                                                 (min_fiber_bending_radius + edge_distance) / 2.0, loop_total_height / 2.0, paraBoxWidth / 2.0);
 
   G4LogicalVolume* logic_full_loop_para_mother = new G4LogicalVolume(solid_full_loop_para_mother,
@@ -399,14 +412,10 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
   m_DisplayAction->AddVolume(logic_full_loop_para_mother, "ParaEnvelope");
 
 
-  G4VSolid* solid_left_half_loop = new G4Torus("solid_left_half_loop",
+  G4VSolid* solid_half_loop = new G4Torus("solid_half_loop",
                                                 0, fiber_thickness / 2.0,
                                                 min_fiber_bending_radius,
                                                 0.5 * M_PIl, 1.0 * M_PIl);
-  // G4VSolid* solid_right_half_loop = new G4Torus("solid_right_half_loop",
-  //                                               0, fiber_thickness / 2.0,
-  //                                               min_fiber_bending_radius,
-  //                                               -0.5 * M_PIl, 1.0 * M_PIl);
   G4VSolid* solid_long_fiber_straight = new G4Tubs("solid_long_fiber_straight",
                                                     0,
                                                     fiber_thickness / 2.0,
@@ -418,12 +427,9 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
                                                     (TowerDx - min_fiber_bending_radius - edge_distance) / 2.0,
                                                     0, 2.0 * M_PIl);
 
-  G4LogicalVolume* logic_left_half_loop = new G4LogicalVolume(solid_left_half_loop,
-                                                              GetScintillatorMaterial(), "logic_left_half_loop",
+  G4LogicalVolume* logic_half_loop = new G4LogicalVolume(solid_half_loop,
+                                                              GetScintillatorMaterial(), "logic_half_loop",
                                                               0, 0, 0);
-  // G4LogicalVolume* logic_right_half_loop = new G4LogicalVolume(solid_right_half_loop,
-  //                                                             GetScintillatorMaterial(), "logic_right_half_loop",
-  //                                                             0, 0, 0);
   G4LogicalVolume* logic_long_fiber_straight = new G4LogicalVolume(solid_long_fiber_straight,
                                                               GetScintillatorMaterial(), "logic_long_fiber_straight",
                                                               0, 0, 0);
@@ -431,12 +437,10 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
                                                               GetScintillatorMaterial(), "logic_xlong_fiber_straight",
                                                               0, 0, 0);
 
-  // m_DisplayAction->AddVolume(logic_right_half_loop, "Scintillator");
-  m_DisplayAction->AddVolume(logic_left_half_loop, "Scintillator");
+  m_DisplayAction->AddVolume(logic_half_loop, "Scintillator");
   m_DisplayAction->AddVolume(logic_long_fiber_straight, "Scintillator");
   m_DisplayAction->AddVolume(logic_xlong_fiber_straight, "Scintillator");
-  SurfaceTable(logic_left_half_loop, "logic_left_half_loop");
-  // SurfaceTable(logic_right_half_loop, "logic_right_half_loop");
+  SurfaceTable(logic_half_loop, "logic_half_loop");
   SurfaceTable(logic_long_fiber_straight, "logic_long_fiber_straight");
   SurfaceTable(logic_xlong_fiber_straight, "logic_xlong_fiber_straight");
 
@@ -444,10 +448,6 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
                                                 0, 1.07*fiber_thickness / 2.0,
                                                 min_fiber_bending_radius,
                                                 0.4 * M_PIl, 1.2 * M_PIl);
-  // G4VSolid* solid_cutout_right_half_loop = new G4Torus("solid_cutout_right_half_loop",
-  //                                               0, 1.07*fiber_thickness / 2.0,
-  //                                               min_fiber_bending_radius,
-  //                                               -0.6 * M_PIl, 1.2 * M_PIl);
   G4VSolid* solid_cutout_long_fiber_straight = new G4Tubs("solid_cutout_long_fiber_straight",
                                                     0,
                                                     1.07*fiber_thickness / 2.0,
@@ -464,74 +464,84 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
       rotm_fibr->rotateY(90 * deg);
       G4double yshiftTmp = min_fiber_bending_radius;
       if(iloop>0) yshiftTmp = -min_fiber_bending_radius;
-        solid_full_absorber_para_center = new G4SubtractionSolid("solid_full_absorber_para_mod1_" + std::to_string(iloop),
-                                                solid_full_absorber_para_center, solid_cutout_long_fiber_straight,
+        solid_full_absorber_center = new G4SubtractionSolid("solid_full_absorber_para_mod1_" + std::to_string(iloop),
+                                                solid_full_absorber_center, solid_cutout_long_fiber_straight,
                                                 rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) + yshiftTmp, 0));
       if(abs(iloop)==(nLoopsFiber-1)/2){
-        solid_full_absorber_para_center = new G4SubtractionSolid("solid_full_absorber_para_mod2_" + std::to_string(iloop),
-                                                solid_full_absorber_para_center, solid_cutout_xlong_fiber_straight,
+        solid_full_absorber_center = new G4SubtractionSolid("solid_full_absorber_para_mod2_" + std::to_string(iloop),
+                                                solid_full_absorber_center, solid_cutout_xlong_fiber_straight,
                                                 rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0));
-        solid_full_absorber_para_right = new G4SubtractionSolid("solid_full_absorber_para_mod2r_" + std::to_string(iloop),
-                                                solid_full_absorber_para_right, solid_cutout_xlong_fiber_straight,
+        solid_full_absorber_right = new G4SubtractionSolid("solid_full_absorber_para_mod2r_" + std::to_string(iloop),
+                                                solid_full_absorber_right, solid_cutout_xlong_fiber_straight,
                                                 rotm_fibr, G4ThreeVector(0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0));
       }
     }
     if(iloop%2 == 0){
-        solid_full_absorber_para_left = new G4SubtractionSolid("solid_full_absorber_para_mod3_" + std::to_string(iloop),
-                                                solid_full_absorber_para_left, solid_cutout_left_half_loop,
+        solid_full_absorber_left = new G4SubtractionSolid("solid_full_absorber_para_mod3_" + std::to_string(iloop),
+                                                solid_full_absorber_left, solid_cutout_left_half_loop,
                                                 0, G4ThreeVector(+min_fiber_bending_radius/2.0+edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0));
     } else {
       G4RotationMatrix* rotm_rcu = new G4RotationMatrix();
       rotm_rcu->rotateY(180 * deg);
-        solid_full_absorber_para_right = new G4SubtractionSolid("solid_full_absorber_para_mod4_" + std::to_string(iloop),
-                                                solid_full_absorber_para_right, solid_cutout_left_half_loop,
+        solid_full_absorber_right = new G4SubtractionSolid("solid_full_absorber_para_mod4_" + std::to_string(iloop),
+                                                solid_full_absorber_right, solid_cutout_left_half_loop,
                                                 rotm_rcu, G4ThreeVector(-min_fiber_bending_radius/2.0-edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0));
     }
   }
 
-  G4LogicalVolume* logic_full_absorber_para_left = new G4LogicalVolume(solid_full_absorber_para_left,
-                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_left",
+  G4LogicalVolume* logic_full_absorber_left = new G4LogicalVolume(solid_full_absorber_left,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_left",
                                                               0, 0, 0);
-  G4LogicalVolume* logic_full_absorber_para_center = new G4LogicalVolume(solid_full_absorber_para_center,
-                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_center",
+  G4LogicalVolume* logic_full_absorber_center = new G4LogicalVolume(solid_full_absorber_center,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_center",
                                                               0, 0, 0);
-  G4LogicalVolume* logic_full_absorber_para_right = new G4LogicalVolume(solid_full_absorber_para_right,
-                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_para_right",
+  G4LogicalVolume* logic_full_absorber_right = new G4LogicalVolume(solid_full_absorber_right,
+                                                              G4Material::GetMaterial("G4_Cu"), "logic_full_absorber_right",
                                                               0, 0, 0);
-  m_DisplayAction->AddVolume(logic_full_absorber_para_left, "Absorber");
-  m_DisplayAction->AddVolume(logic_full_absorber_para_center, "Absorber");
-  m_DisplayAction->AddVolume(logic_full_absorber_para_right, "Absorber");
+  m_DisplayAction->AddVolume(logic_full_absorber_left, "Absorber");
+  m_DisplayAction->AddVolume(logic_full_absorber_center, "Absorber");
+  m_DisplayAction->AddVolume(logic_full_absorber_right, "Absorber");
   new G4PVPlacement(0, G4ThreeVector(-(TowerDx - min_fiber_bending_radius - edge_distance) / 2.0, 0, 0),
-                    logic_full_absorber_para_left,
-                    "physvol_full_absorber_para_left",
-                    logic_full_loop_para,
+                    logic_full_absorber_left,
+                    "physvol_full_absorber_left",
+                    logic_full_loop_box,
                     0, 0, OverlapCheck());
   new G4PVPlacement(0, G4ThreeVector(0, 0, 0),
-                    logic_full_absorber_para_center,
-                    "physvol_full_absorber_para_center",
-                    logic_full_loop_para,
+                    logic_full_absorber_center,
+                    "physvol_full_absorber_center",
+                    logic_full_loop_box,
                     0, 0, OverlapCheck());
   new G4PVPlacement(0, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0, 0, 0),
-                    logic_full_absorber_para_right,
-                    "physvol_full_absorber_para_right",
-                    logic_full_loop_para,
+                    logic_full_absorber_right,
+                    "physvol_full_absorber_right",
+                    logic_full_loop_box,
                     0, 0, OverlapCheck());
 
   G4RotationMatrix* rotm_full_loop = new G4RotationMatrix();
   rotm_full_loop->rotateZ(tilting_angle);
   rotm_full_loop->rotateY(0.5*M_PIl);
-  //G4VPhysicalVolume* physvol_full_loop_para =
 
   new G4PVPlacement(rotm_full_loop, G4ThreeVector(0, 0, 0),
-                    logic_full_loop_para,
-                    "physvol_full_loop_para",
+                    logic_full_loop_box,
+                    "physvol_full_loop_box",
                     logic_full_loop_para_mother,
                     0, 0, OverlapCheck());
+
+  // create SiPM
+  G4VSolid* solid_SiPM = new G4Box("solid_SiPM",
+                                                SiPMDx / 2.0, SiPMDy / 2.0, SiPMDz / 2.0);
+  G4LogicalVolume* logic_SiPM = new G4LogicalVolume(solid_SiPM,
+                                                              G4Material::GetMaterial("G4_Si"), "logic_SiPM",
+                                                              0, 0, 0);
+  m_DisplayAction->AddVolume(logic_SiPM, "SiPM");
+
   G4VPhysicalVolume* physvol_long_fiber_straight[nLoopsFiber+2] = {nullptr};
   G4VPhysicalVolume* physvol_xlong_fiber_straight[nLoopsFiber+2] = {nullptr};
   G4VPhysicalVolume* physvol_left_half_loop[nLoopsFiber+2] = {nullptr};
   G4VPhysicalVolume* physvol_right_half_loop[nLoopsFiber+2] = {nullptr};
+  G4VPhysicalVolume* physvol_SiPM[nLoopsFiber+2] = {nullptr};
   int indxarr = 0;
+  // place straight sections of fibers
   for(int iloop=-(nLoopsFiber-1)/2-1; iloop<=(nLoopsFiber-1)/2+1; iloop++){
     if(iloop!=0){
       G4RotationMatrix* rotm_fibr = new G4RotationMatrix();
@@ -543,57 +553,49 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
         new G4PVPlacement(rotm_fibr, G4ThreeVector(0, iloop*(2.0*min_fiber_bending_radius) + yshiftTmp, 0),
                                                                     logic_long_fiber_straight,
                                                                     "physvol_long_fiber_straight_" + std::to_string(iloop),
-                                                                    logic_full_loop_para,
+                                                                    logic_full_loop_box,
                                                                     0, 0, OverlapCheck());
       }
       if(abs(iloop)==(nLoopsFiber-1)/2){
         physvol_xlong_fiber_straight[indxarr] =
         new G4PVPlacement(rotm_fibr, G4ThreeVector((min_fiber_bending_radius + edge_distance) / 2.0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0),
-        // new G4PVPlacement(rotm_fibr, G4ThreeVector((min_fiber_bending_radius + edge_distance) / 2.0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0),
                                                                     logic_xlong_fiber_straight,
                                                                     "physvol_xlong_fiber_straight_" + std::to_string(iloop),
-                                                                    logic_full_loop_para,
+                                                                    logic_full_loop_box,
                                                                     0, 0, OverlapCheck());
+        physvol_SiPM[indxarr] =
+        new G4PVPlacement(rotm_fibr, G4ThreeVector((TowerDx + SiPMDz) / 2.0, iloop*(2*min_fiber_bending_radius) - yshiftTmp, 0),
+                                                                    logic_SiPM,
+                                                                    _towerlogicnameprefix + "physvol_SiPM_" + std::to_string(iloop),
+                                                                    logic_full_loop_box,
+                                                                    0, 0, OverlapCheck());
+        MakeBoundarySiPM(physvol_xlong_fiber_straight[indxarr],physvol_SiPM[indxarr],"long_SiPM_boundary" + std::to_string(iloop));
       }
     }
     indxarr++;
   }
   indxarr = 0;
+  // place half loops of fiber
   for(int iloop=-(nLoopsFiber-1)/2-1; iloop<=(nLoopsFiber-1)/2+1; iloop++){
     if(abs(iloop)<(nLoopsFiber-1)/2+1){
       if(iloop%2 == 0){
         physvol_left_half_loop[indxarr] =
         new G4PVPlacement(0, G4ThreeVector(-(TowerDx - min_fiber_bending_radius - edge_distance) / 2.0+min_fiber_bending_radius/2.0 + edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
-                                                                    logic_left_half_loop,
+                                                                    logic_half_loop,
                                                                     "physvol_left_half_loop_" + std::to_string(iloop),
-                                                                    logic_full_loop_para,
+                                                                    logic_full_loop_box,
                                                                     0, 0, OverlapCheck());
-        if(physvol_long_fiber_straight[indxarr+1]){
-          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+1],physvol_left_half_loop[indxarr],"long_left_+1_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr+1],"left_long_+1_boundary" + std::to_string(iloop));
-        }
-        if(physvol_long_fiber_straight[indxarr]){
-          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr],physvol_left_half_loop[indxarr],"long_left_0_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr],"left_long_0_boundary" + std::to_string(iloop));
-        }
-        if(indxarr>0){
-          if(physvol_long_fiber_straight[indxarr-1]){
-            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr-1],physvol_left_half_loop[indxarr],"long_left_-1_boundary" + std::to_string(iloop));
-            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr-1],"left_long_-1_boundary" + std::to_string(iloop));
+        // define internal boundaries of fiber segments so that photons can cross from one piece to another as if it were one single fiber
+        for(int ibound=-1; ibound <=1; ibound++){
+          if(physvol_long_fiber_straight[indxarr+ibound]){
+            if(indxarr==0 && ibound==-1) continue;
+            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+ibound],physvol_left_half_loop[indxarr],"long_left_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_long_fiber_straight[indxarr+ibound],"left_long_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
           }
-        }
-        if(physvol_xlong_fiber_straight[indxarr+1]){
-          MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr+1],physvol_left_half_loop[indxarr],"xlong_left_+1_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr+1],"left_xlong_+1_boundary" + std::to_string(iloop));
-        }
-        if(physvol_xlong_fiber_straight[indxarr]){
-          MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr],physvol_left_half_loop[indxarr],"xlong_left_0_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr],"left_xlong_0_boundary" + std::to_string(iloop));
-        }
-        if(indxarr>0){
-          if(physvol_xlong_fiber_straight[indxarr-1]){
-            MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr-1],physvol_left_half_loop[indxarr],"xlong_left_-1_boundary" + std::to_string(iloop));
-            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr-1],"left_xlong_-1_boundary" + std::to_string(iloop));
+          if(physvol_xlong_fiber_straight[indxarr+ibound]){
+            if(indxarr==0 && ibound==-1) continue;
+            MakeBoundaryFibers(physvol_xlong_fiber_straight[indxarr+ibound],physvol_left_half_loop[indxarr],"xlong_left_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_left_half_loop[indxarr],physvol_xlong_fiber_straight[indxarr+ibound],"left_xlong_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
           }
         }
       } else {
@@ -602,27 +604,16 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
       rotm_loop2->rotateX(180 * deg);
         physvol_right_half_loop[indxarr] =
         new G4PVPlacement(rotm_loop2, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0-min_fiber_bending_radius/2.0 - edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
-                                                                    logic_left_half_loop,
+                                                                    logic_half_loop,
                                                                     "physvol_right_half_loop_" + std::to_string(iloop),
-                                                                    logic_full_loop_para,
+                                                                    logic_full_loop_box,
                                                                     0, 0, OverlapCheck());
-        // new G4PVPlacement(0, G4ThreeVector((TowerDx - min_fiber_bending_radius - edge_distance) / 2.0-min_fiber_bending_radius/2.0 - edge_distance/2.0, iloop*(2.0*min_fiber_bending_radius), 0),
-        //                                                             logic_right_half_loop,
-        //                                                             "physvol_right_half_loop_" + std::to_string(iloop),
-        //                                                             logic_full_loop_para,
-        //                                                             0, 0, OverlapCheck());
-        if(physvol_long_fiber_straight[indxarr+1]){
-          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+1],physvol_right_half_loop[indxarr],"long_right_+1_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr+1],"right_long_+1_boundary" + std::to_string(iloop));
-        }
-        if(physvol_long_fiber_straight[indxarr]){
-          MakeBoundaryFibers(physvol_long_fiber_straight[indxarr],physvol_right_half_loop[indxarr],"long_right_0_boundary" + std::to_string(iloop));
-          MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr],"right_long_0_boundary" + std::to_string(iloop));
-        }
-        if(indxarr>0){
-          if(physvol_long_fiber_straight[indxarr-1]){
-            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr-1],physvol_right_half_loop[indxarr],"long_right_-1_boundary" + std::to_string(iloop));
-            MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr-1],"right_long_-1_boundary" + std::to_string(iloop));
+        // define internal boundaries of fiber segments so that photons can cross from one piece to another as if it were one single fiber
+        for(int ibound=-1; ibound <=1; ibound++){
+          if(physvol_long_fiber_straight[indxarr+ibound]){
+            if(indxarr==0 && ibound==-1) continue;
+            MakeBoundaryFibers(physvol_long_fiber_straight[indxarr+ibound],physvol_right_half_loop[indxarr],"long_right_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
+            MakeBoundaryFibers(physvol_right_half_loop[indxarr],physvol_long_fiber_straight[indxarr+ibound],"right_long_" + std::to_string(ibound) + "_boundary" + std::to_string(iloop));
           }
         }
       }
@@ -631,7 +622,7 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
   }
   G4double length_replsolid = TowerDz - sqrt(pow(loop_total_height,2)-pow(TowerDx,2))-1*cm;
   G4VSolid* solid_TF_Replica = new G4Para("DRCalRowBox",
-                                                length_replsolid / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+                                                length_replsolid / 2.0, (TowerDx+1*mm) / 2.0, TowerDy / 2.0,
                                                 tilting_angle, 0, 0);
   auto logic_TF_Replica  = new G4LogicalVolume(solid_TF_Replica,G4Material::GetMaterial("G4_AIR"),"logic_TF_Replica");
   int nLayers = (int) (length_replsolid) / (fiber_thickness + fiber_spacing);
@@ -643,7 +634,7 @@ bool PHG4FoCalDetector::ConstructCopperTiltedFibers(int type,G4LogicalVolume* lo
   }
 
   // G4VSolid* solid_TF_Replica = new G4Para("DRCalRowBox",
-  //                                               (TowerDz) / 2.0, TowerDx / 2.0, TowerDx / 2.0,
+  //                                               (TowerDz) / 2.0, TowerDy / 2.0, TowerDx / 2.0,
   //                                               tilting_angle, 0, 0);
   // // auto solid_TF_Replica    = new G4Box("DRCalRowBox",1.01*TowerDz / 2.0, 1.01*TowerDx / 2.0,1.01*TowerDx / 2.0);
   // auto logic_TF_Replica  = new G4LogicalVolume(solid_TF_Replica,G4Material::GetMaterial("G4_AIR"),"logic_TF_Replica");
@@ -1248,7 +1239,7 @@ PHG4FoCalDetector::GetScintillatorMaterial()
     const G4int ntab = 31;
     tab->AddConstProperty("FASTTIMECONSTANT", 2.8*ns); // was 6
     // tab->AddConstProperty("SCINTILLATIONYIELD", 13.9/keV); // was 200/MEV nominal  10
-    tab->AddConstProperty("SCINTILLATIONYIELD", 2/keV);//1.39/keV); // was 200/MEV nominal  10
+    tab->AddConstProperty("SCINTILLATIONYIELD", 13.9/keV);//1.39/keV); // was 200/MEV nominal  10
     // tab->AddConstProperty("SCINTILLATIONYIELD", 200/MeV); // was 200/MEV nominal, should maybe be 13.9/keV
     tab->AddConstProperty("RESOLUTIONSCALE", 1.0);
 
@@ -1507,7 +1498,7 @@ void PHG4FoCalDetector::SurfaceTable(G4LogicalVolume *vol,  G4String  name) {
   const G4int ntab = 2;
   G4double opt_en[] = {1.451*eV, 3.645*eV}; // 350 - 800 nm
   G4double reflectivity[] = {0.99, 0.99};
-  G4double efficiency[] = {0.99, 0.99};
+  G4double efficiency[] = {0.0, 0.0};
   G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
   surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
   surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
@@ -1546,6 +1537,33 @@ void PHG4FoCalDetector::MakeBoundaryFibers(G4VPhysicalVolume *fromVol, G4VPhysic
   surfmat->AddProperty("RINDEX", opt_en, RefractiveIndexBoundary, ntab);
   surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
   surfmat->AddProperty("TRANSMITTANCE", opt_en, transmittance, ntab);
+  surf->SetMaterialPropertiesTable(surfmat);
+
+
+
+}//MakeBoundary
+
+
+//_____________________________________________________________________________
+void PHG4FoCalDetector::MakeBoundarySiPM(G4VPhysicalVolume *fromVol, G4VPhysicalVolume *toVol, G4String name) {
+
+  //optical boundary between the fromVol and optical photons detector
+
+  G4OpticalSurface *surf = new G4OpticalSurface(name +"_OpDetS1x");
+  surf->SetType(dielectric_metal); // photon is absorbed when reaching the detector, no material rindex required
+  surf->SetFinish(polished);
+  surf->SetModel(glisur);
+
+  new G4LogicalBorderSurface(name +"OpDetBSx", fromVol, toVol, surf);
+
+  const G4int ntab = 2;
+  G4double opt_en[] = {1.051*eV, 4.545*eV}; // 350 - 800 nm
+  G4double reflectivity[] = {0.01, 0.01};
+  G4double efficiency[] = {0.99, 0.99}; // effi to detect photon
+
+  G4MaterialPropertiesTable *surfmat = new G4MaterialPropertiesTable();
+  surfmat->AddProperty("EFFICIENCY", opt_en, efficiency, ntab);
+  surfmat->AddProperty("REFLECTIVITY", opt_en, reflectivity, ntab);
   surf->SetMaterialPropertiesTable(surfmat);
 
 

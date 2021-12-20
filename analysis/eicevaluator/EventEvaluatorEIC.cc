@@ -1198,7 +1198,8 @@ void EventEvaluatorEIC::fillOutputNtuples(PHCompositeNode* topNode)
                               (GetProjectionNameFromIndex(iIndex).find("FEMC") != std::string::npos) ||
                               (GetProjectionNameFromIndex(iIndex).find("EHCAL") != std::string::npos) ||
                               (GetProjectionNameFromIndex(iIndex).find("EEMCH") != std::string::npos) ||
-                              (GetProjectionNameFromIndex(iIndex).find("EEMC") != std::string::npos))) ||
+                              (GetProjectionNameFromIndex(iIndex).find("EEMC") != std::string::npos) ||
+                              (GetProjectionNameFromIndex(iIndex).find("FOCAL") != std::string::npos))) ||
           (GetProjectionNameFromIndex(iIndex).find("TTL") != std::string::npos) ||
           (GetProjectionNameFromIndex(iIndex).find("LBLVTX") != std::string::npos) ||
           (GetProjectionNameFromIndex(iIndex).find("BARR") != std::string::npos) ||
@@ -1238,9 +1239,12 @@ void EventEvaluatorEIC::fillOutputNtuples(PHCompositeNode* topNode)
             _hits_x[_nHitsLayers] = hit_iter->second->get_x(0);
             _hits_y[_nHitsLayers] = hit_iter->second->get_y(0);
             _hits_z[_nHitsLayers] = hit_iter->second->get_z(0);
-            _hits_x2[_nHitsLayers] = hit_iter->second->get_x(1);
-            _hits_y2[_nHitsLayers] = hit_iter->second->get_y(1);
-            _hits_z2[_nHitsLayers] = hit_iter->second->get_z(1);
+            _hits_x2[_nHitsLayers] = hit_iter->second->get_index_j();
+            _hits_y2[_nHitsLayers] = hit_iter->second->get_index_k();
+            _hits_z2[_nHitsLayers] = hit_iter->second->get_index_l();
+            // _hits_x2[_nHitsLayers] = hit_iter->second->get_x(1);
+            // _hits_y2[_nHitsLayers] = hit_iter->second->get_y(1);
+            // _hits_z2[_nHitsLayers] = hit_iter->second->get_z(1);
             _hits_t[_nHitsLayers] = hit_iter->second->get_t(0);
             _hits_edep[_nHitsLayers] = hit_iter->second->get_edep();
             _hits_lightyield[_nHitsLayers] = hit_iter->second->get_light_yield();
@@ -3788,6 +3792,9 @@ int EventEvaluatorEIC::GetProjectionIndex(std::string projname)
     return 160;
   else if (projname.find("SVTX") != std::string::npos)
     return 161;
+
+  else if (projname.find("FOCAL") != std::string::npos)
+    return 170;
   else
     return -1;
   return -1;
@@ -4001,6 +4008,8 @@ std::string EventEvaluatorEIC::GetProjectionNameFromIndex(int projindex)
     return "BARR";
   case 161:
     return "SVTX";
+  case 170:
+    return "FOCAL";
   default:
     return "NOTHING";
   }

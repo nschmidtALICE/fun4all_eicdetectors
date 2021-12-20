@@ -68,6 +68,10 @@ void PHG4FoCalDisplayAction::ApplyDisplayAction(G4VPhysicalVolume *physvol)
     {
       visatt->SetColour(G4Colour(0.7, 0.7, 0.7));
     }
+    else if (it.second == "SiPM")
+    {
+      visatt->SetColour(G4Colour(199/255.,21/255.,133/255.,0.6));
+    }
     else if (it.second == "Fill")
     {
       visatt->SetColour(G4Colour(0.7, 0.7, 0.7));

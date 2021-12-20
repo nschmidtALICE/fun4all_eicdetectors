@@ -100,6 +100,7 @@ class PHG4FoCalDetector : public PHG4Detector
   G4Material *GetPMMAMaterial();
   void SurfaceTable(G4LogicalVolume *vol,  G4String  name);
   void MakeBoundaryFibers(G4VPhysicalVolume *crystal, G4VPhysicalVolume *opdet,  G4String  name);
+  void MakeBoundarySiPM(G4VPhysicalVolume *crystal, G4VPhysicalVolume *opdet,  G4String  name);
   int PlaceTower(G4LogicalVolume *envelope, G4LogicalVolume *tower);
   int ParseParametersFromTable();
 

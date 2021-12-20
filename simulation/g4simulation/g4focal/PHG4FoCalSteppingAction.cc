@@ -69,7 +69,7 @@ PHG4FoCalSteppingAction::PHG4FoCalSteppingAction(PHG4FoCalDetector* detector, co
   , _readout_size(1.0)
   , _detector_size(100)
   , absorbertruth(absorberactive)
-  , light_scint_model(1)
+  , light_scint_model(0)
 {
 }
 
@@ -111,11 +111,12 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
   // // // else if(volumeMother)
   // // // cout << whichactive << "\t" << volume->GetName() << "\tMM:" << volumeMother->GetName()  << endl;
   // // // else 
-  // cout << whichactive << "\t" << volume->GetName() << endl;
+  // if(aStep->GetTotalEnergyDeposit()>0 && !(volume->GetName().find("absorber") != string::npos))
+  // cout << whichactive << "\t" << volume->GetName() << "\te : " << aStep->GetTotalEnergyDeposit()  << endl;
   // // // cout << whichactive << "\t" << touch->GetCopyNumber(2)<< "\t" << touch->GetCopyNumber(3) << endl;
   // // // cout << "\tx: " << (aStep->GetPreStepPoint()->GetPosition()).x()<< "\ty: " << (aStep->GetPreStepPoint()->GetPosition()).y()<< "\tz: " << (aStep->GetPreStepPoint()->GetPosition()).z()<< endl;
   // } else {
-  // cout << volume->GetCopyNo() << "\t" << volume->GetName() << endl;
+  // cout << "first: " << aStep->GetVolume(1)->GetCopyNo() << "\tsecond: " << aStep->GetVolume(2)->GetCopyNo() << "\tthird: " << aStep->GetVolume(3)->GetCopyNo() << "\t" << volume->GetName() << endl;
 
   // }
 
@@ -124,16 +125,21 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
   {
     return false;
   }
+  // cout << "first: " << touch->GetVolume(1)->GetCopyNo() << "\tsecond: " << touch->GetVolume(2)->GetCopyNo() << "\tthird: " << touch->GetVolume(3)->GetCopyNo() << "\t" << volume->GetName() << "\te : " << aStep->GetTotalEnergyDeposit() << "\teion : " << aStep->GetNonIonizingEnergyDeposit() << endl;
 
   int layer_id = detector_->get_Layer();
   // unsigned int tower_id = -1;
-  int idx_j = -1;
+  int idx_j = touch->GetVolume(2)->GetCopyNo();
   int idx_k = -1;
-
+  if(volume->GetName().find("SiPM_-2") != string::npos){
+    idx_k = 0;
+  } else if(volume->GetName().find("SiPM_2") != string::npos){
+    idx_k = 1;
+  }
   if (whichactive > 0)  // in sctintillator
   {
   //   /* Find indizes of sctintillator / tower containing this step */
-    FindTowerIndex(touch, idx_j, idx_k);
+    // FindTowerIndex(touch, idx_j, idx_k);
     // tower_id = touch->GetVolume(1)->GetCopyNo();
     // cout << tower_id << endl;
   }
@@ -144,11 +150,13 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
 
   /* Get energy deposited by this step */
   G4double edep = aStep->GetTotalEnergyDeposit() / GeV;
+  // G4double edep = aStep->GetKineticEnergy() / GeV;
   G4double eion = (aStep->GetTotalEnergyDeposit() - aStep->GetNonIonizingEnergyDeposit()) / GeV;
   G4double light_yield = 0;
 
   /* Get pointer to associated Geant4 track */
   const G4Track* aTrack = aStep->GetTrack();
+  edep = aTrack->GetKineticEnergy() / GeV; // TODO why do we need KineticEnergy for OpticalPhotons?
 
   // if this block stops everything, just put all kinetic energy into edep
   if (detector_->IsBlackHole())
@@ -168,12 +176,13 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
         aTrack->GetParticleDefinition()->GetParticleName().find("geantino") != string::npos)
     {
       geantino = true;
+      cout << "a geantino?!!" << endl;
     }
 
     /* Get Geant4 pre- and post-step points */
     G4StepPoint* prePoint = aStep->GetPreStepPoint();
     G4StepPoint* postPoint = aStep->GetPostStepPoint();
-    if(abs( prePoint->GetPosition().y() / cm)>(_detector_size*1.1)  || abs( prePoint->GetPosition().x() / cm)>(_detector_size*1.1)) return false;
+    // if(abs( prePoint->GetPosition().y() / cm)>(_detector_size*1.1)  || abs( prePoint->GetPosition().x() / cm)>(_detector_size*1.1)) return false;
     // cout << "x: " << prePoint->GetPosition().x() << "\ty: "  << prePoint->GetPosition().y() << "\tz: "  << prePoint->GetPosition().z() << endl;
     switch (prePoint->GetStepStatus())
     {
@@ -191,7 +200,7 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
       hit->set_index_k(idx_k);
       // hit->set_index_l(idx_l);
 
-//       cout << "\tidj: " << idx_j << "\tidk: "  << idx_k << "\tz " << prePoint->GetPosition().z()/cm << endl;
+      cout << "\tidj: " << idx_j << "\tidk: "  << idx_k << "\tt " << prePoint->GetGlobalTime() / nanosecond << "\tedep: " << aTrack->GetKineticEnergy() / GeV << "\ttrkID: " << aTrack->GetTrackID() <<  endl;
       // TODO use these positions for an index conversion
       /* Set hit location (space point) */
       hit->set_x(0, prePoint->GetPosition().x() / cm);
@@ -361,6 +370,7 @@ bool PHG4FoCalSteppingAction::UserSteppingAction(const G4Step* aStep, bool)
 
     /* sum up the energy to get total deposited */
     hit->set_edep(hit->get_edep() + edep);
+      // cout << "\thittedep: " << hit->get_edep() << "\taddtedep: " << edep << "\thitly: " << hit->get_light_yield() << "\taddly: " << light_yield << endl;
     if (whichactive > 0)
     {
       // cout << "\thitteion: " << hit->get_eion() << "\taddteion: " << eion << "\thitly: " << hit->get_light_yield() << "\taddly: " << light_yield << endl;
